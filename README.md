@@ -14,11 +14,11 @@ Para que este proyecto funcione correctamente, es necesario que reemplaces las c
 
 Busca en tu código las siguientes líneas:
 
-javascript
+```javascript
 const TOGETHER_API_KEY = "<< YOUR API KEY >>";
 const OPENAI_API_KEY = "<< YOUR API KEY >>";
 const GEMINI_API_KEY = "<< YOUR API KEY >>";
-
+```
 
 Reemplaza `<< YOUR API KEY >>` con las claves API correspondientes que obtuviste en los pasos anteriores. Asegúrate de que la clave esté entre comillas y de no compartir tus claves API públicamente para mantener la seguridad de tu cuenta.
 
