@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Code Assistant</title>
+  <link rel="stylesheet" data-name="vs/editor/editor.main"
+    href="https://unpkg.com/monaco-editor@latest/min/vs/editor/editor.main.css">
+  <style>
+    * * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0);
+      /* Dark background */
+      color: #ffffff;
+      /* Light text */
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(10px);
+    }
+
+    #spotlight {
+      width: 100%;
+      padding: 20px;
+      /* Darker shade for spotlight */
+      color: #ffffff;
+      /* Light text */
+      border-radius: 10px;
+      /* Lighter shadow for dark mode */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #spotlight-input {
+      width: 100%;
+      padding: 10px 15px;
+      font-size: 18px;
+      background: #1d1d1d;
+      /* Dark background for input */
+      color: #ffffff;
+      /* Light text */
+      border: 1px solid #333;
+      /* Darker border */
+      border-radius: 8px;
+      outline: none;
+      margin-bottom: 10px;
+    }
+
+    #spotlight-input:focus {
+      border-color: #555;
+      /* Lighter border for focus */
+    }
+
+    #screenshot-thumbnail {
+      border: 1px solid #444;
+      /* Darker border for thumbnails */
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+
+    #clipboard-content {
+      white-space: pre-wrap;
+      background: #1a1a1a;
+      /* Dark background for clipboard content */
+      color: #ffffff;
+      /* Light text */
+      padding: 5px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      /* Darker border */
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-height: 150px;
+      width: 100%;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      /* Lighter color for spinner */
+      border-radius: 50%;
+      border-top: 4px solid #ffffff;
+      /* Light color for spinner */
+      width: 40px;
+      height: 40px;
+      animation: spin 2s linear infinite;
+      margin: 10px auto;
+    }
+
+    #editor-container {
+      width: 100%;
+      height: 250px;
+      /* Use 100vh for full viewport height or adjust as needed */
+      overflow: hidden;
+      /* Hide the overflow */
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(255, 255, 255, 0.1);
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    #api-status {
+      position: absolute;
+      right: 26px;
+      opacity: 0.25;
+      border-radius: 6px;
+      background: #fff4;
+      top: 29px;
+      padding: 2px 4px;
+      font-family: SANS-SERIF;
+    }
+
+    .hint {
+      font-family: monospace;
+      padding-top: 4px;
+      color: gray;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+
+  <div id="spotlight">
+    <input type="text" id="spotlight-input" placeholder="Editar..." />
+    <div id="editor-container"></div>
+    <div id="api-status">✨✨✨ GPT-4 Turbo</div>
+    <div id="spinner" class="spinner" style="display: none;"></div>
+    <div class="hint">Control+IZQ, Control+DER para ir hacia atrás y hacia adelante</div>
+  </div>
+
+
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script>
+    const TOGETHER_API_KEY = "<< YOUR API KEY >>";
+    const OPENAI_API_KEY = "<< >>";
+    const GEMINI_API_KEY = "<< >>";
+
+    const openai = axios.create({
+      baseURL: "https://api.openai.com/v1",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+    });
+
+    const together = axios.create({
+      baseURL: "https://api.together.xyz/v1",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOGETHER_API_KEY}`,
+      },
+    });
+    window.axios = axios;
+  </script>
+  <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+  <script src="https://unpkg.com/monaco-editor@latest/min/vs/editor/editor.main.nls.js"></script>
+  <script src="https://unpkg.com/monaco-editor@latest/min/vs/editor/editor.main.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.3.1/highlight.min.js"></script>
+
+  <script>
+    let currentAPI = 'openai';
+    let apis = ['openai', 'gemini', 'openchat'];
+    let lastShiftTime = 0;
+    let editor, responseEditor;
+
+    require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' } });
+    require(['vs/editor/editor.main'], function () {
+      editor = monaco.editor.create(document.getElementById('editor-container'), {
+        theme: 'vs-dark',
+        automaticLayout: true,
+        lineNumbers: 'off',
+        minimap: {
+          enabled: false
+        },
+        renderValidationDecorations: 'off'
+      });
+    });
+
+    function changeAPI(apiIndex) {
+      currentAPI = apis[apiIndex];
+      document.getElementById('api-status').textContent = `${'✨'.repeat(apis.length - apiIndex)} ${apis[apiIndex].charAt(0).toUpperCase() + apis[apiIndex].slice(1)}`;
+    }
+
+    const changeLang = lang => {
+      window.monaco.editor.setModelLanguage(window.monaco.editor.getModels()[0], lang)
+    }
+
+    const spinner = document.getElementById('spinner');
+
+    function showSpinner() {
+      spinner.style.display = 'block';
+    }
+
+    function hideSpinner() {
+      spinner.style.display = 'none';
+    }
+
+
+    async function performAPICall() {
+      showSpinner();
+      let value = document.querySelector('#spotlight-input').value;
+      let clipboardContent = editor.getValue();
+      let { message, language } = await transformInput(value, clipboardContent);
+      console.log({ message, language })
+      hideSpinner();
+      let lang = language || hljs.highlightAuto(message,
+        ['javascript', 'typescript', 'html', 'css']
+      ).language;
+      editor.setValue(message);
+      changeLang(lang)
+      document.querySelector('#spotlight-input').value = '';
+    }
+
+
+    var currentAnswerIndex = -1;
+    var answerHistory = [];
+
+    async function createChatCompletion(messages, options = {}) {
+      try {
+        const response = await openai.post("/chat/completions", {
+          model: options.model || "gpt-4-1106-preview",
+          messages,
+        });
+        return response.data.choices;
+      } catch (error) {
+        console.error("Error creating chat completion:", error);
+      }
+    }
+
+    async function createChatCompletionOpenchat(messages, options = {}) {
+      try {
+        const response = await together.post("/chat/completions", {
+          model: options.model || "openchat/openchat-3.5-1210",
+          messages,
+        });
+        return response.data.choices;
+      } catch (error) {
+        console.error("Error creating chat completion:", error);
+      }
+    }
+
+
+
+    // The function summarizeMessage encapsulates the logic to summarize a message using the Gemini API.
+    async function geminiCall(inputText, clipboardContent) {
+      // Create an instance of axios with the base URL and headers set for the Gemini API.
+      const axiosInstance = axios.create({
+        baseURL:
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      // Helper function to create the request body.
+      const createRequestBody = () => ({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `Reply to REQUEST in the same language, dont explain anything, just output the complete answer of what is being asked, this is NOT a response to a message, this is a MODIFICATION of CONTENT, REPLY WITH ONLY TEXT, NO QUOTES. ALWAYS FULL RESPONSE. IF IN A CONSOLE ENVIRONMENT, ONLY REPLY WITH COMMANDS, NO OUTPUT OR SHELL, WRAP IT WITH MARKDOWN INCLUDE LANGUAGE\nREQUEST RELATED TO INPUT:\n${inputText}\n\nINPUT:\n${clipboardContent}\n\nOUTPUT FULL CODE:\n\n`,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.9,
+          topK: 1,
+          topP: 1,
+          maxOutputTokens: 2048,
+          stopSequences: [],
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE",
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE",
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE",
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE",
+          },
+        ],
+      });
+
+      // Combine the user prompt with the text to be summarized.
+      const requestBody = createRequestBody();
+      const result = await axiosInstance.post(
+        `?key=${GEMINI_API_KEY}`,
+        requestBody
+      );
+
+      try {
+        return [
+          {
+            message: {
+              content: result.data.candidates[0].content.parts[0].text,
+            },
+          },
+        ];
+      } catch (e) {
+        console.error(result.data);
+      }
+
+    }
+
+    function sanitizeMessage(message) {
+      let lines = message.split('\n');
+      if (lines[0] === 'OUTPUT:') {
+        lines.shift();
+      }
+      message = lines.join('\n');
+
+
+      let language;
+      if (message.startsWith("```")) {
+        language = message.split("\n")[0].replace("```", "");
+        message = message.split("\n").map((x, i) => {
+          if (i === 0 || x === '```') {
+            return x.replace(/```/g, "")
+          } else {
+            return x;
+          }
+        }).slice(1).join("\n");
+      }
+
+      return { message, language };
+    }
+
+
+    async function transformInput(inputText, clipboardContent) {
+      answerHistory.push(clipboardContent);
+
+      let choices;
+      switch (currentAPI) {
+        case 'openchat':
+          console.log('Using OpenChat API');
+          choices = await createChatCompletionOpenchat([
+            {
+              role: "system",
+              content:
+                "Reply to REQUEST in the same language, don't explain anything, just output the complete answer of what is being asked, this is NOT a response to a message, this is a MODIFICATION of CONTENT, REPLY WITH ONLY TEXT, NO QUOTES. ALWAYS FULL RESPONSE. IF IN A CONSOLE ENVIRONMENT, ONLY REPLY WITH COMMANDS, NO OUTPUT OR SHELL, WRAP IT WITH MARKDOWN INCLUDE LANGUAGE\n\nOUTPUT FULL CODE:\n\n",
+            },
+            { role: "user", content: `REQUEST RELATED TO INPUT:\n${inputText}` },
+            { role: "user", content: `INPUT:\n${clipboardContent}` },
+          ]);
+          break;
+        case 'gemini':
+          console.log('Using Gemini API');
+          choices = await geminiCall(inputText, clipboardContent);
+          break;
+        case 'openai':
+          console.log('Using OpenAI API');
+          choices = await createChatCompletion([
+            {
+              role: "system",
+              content:
+                "Reply to REQUEST in the same language, don't explain anything, just output the complete answer of what is being asked, this is NOT a response to a message, this is a MODIFICATION of CONTENT, REPLY WITH ONLY TEXT, NO QUOTES. ALWAYS FULL RESPONSE. IF IN A CONSOLE ENVIRONMENT, ONLY REPLY WITH COMMANDS, NO OUTPUT OR SHELL, WRAP IT WITH MARKDOWN INCLUDE LANGUAGE\n\nOUTPUT FULL CODE:\n\n",
+            },
+            { role: "user", content: `REQUEST RELATED TO INPUT:\n${inputText}` },
+            { role: "user", content: `INPUT:\n${clipboardContent}` },
+          ]);
+          break;
+        default:
+          console.error("Unknown API selected");
+          return;
+      }
+      let msg = choices[0].message.content;
+
+      if (
+        currentAnswerIndex >= 0 &&
+        currentAnswerIndex < answerHistory.length - 1
+      ) {
+        answerHistory = answerHistory.slice(0, currentAnswerIndex + 1);
+      }
+      answerHistory.push(msg);
+      currentAnswerIndex = answerHistory.length - 1;
+
+      return sanitizeMessage(msg);
+    };
+
+    document.onkeydown = function (e) {
+      if (e.key === "Shift") {
+        const now = Date.now();
+        if (now - lastShiftTime < 500) {
+          changeAPI((apis.indexOf(currentAPI) + 1) % apis.length);
+          lastShiftTime = 0;
+        } else {
+          lastShiftTime = now;
+        }
+      }
+    };
+
+    document.getElementById('spotlight-input').addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') {
+        console.log('Enter key pressed');
+        performAPICall();
+      }
+    });
+
+    let altPressed = false;
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === "Alt") {
+        altPressed = true;
+      }
+      if (altPressed) {
+        if (e.key === "ArrowLeft") {
+          if (currentAnswerIndex > 0) {
+            currentAnswerIndex--;
+            let { message, language } = sanitizeMessage(answerHistory[currentAnswerIndex]);
+            editor.setValue(message);
+            changeLang(language);
+          }
+        }
+        if (e.key === "ArrowRight") {
+          if (currentAnswerIndex < answerHistory.length - 1) {
+            currentAnswerIndex++;
+            let { message, language } = sanitizeMessage(answerHistory[currentAnswerIndex]);
+            editor.setValue(message);
+            changeLang(language);
+          }
+        }
+      }
+    });
+
+    document.addEventListener('keyup', function (e) {
+      if (e.key === "Alt") {
+        altPressed = false;
+      }
+    });
+
+
+
+
+
+
+  </script>
+
+</body>
+
+</html>
