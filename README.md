@@ -1,6 +1,10 @@
-# Instrucciones para la Configuración de las Claves API
+# Instrucciones para la configuración del proyecto
 
-Para que este proyecto funcione correctamente, es necesario que reemplaces las claves API de prueba por tus propias claves. A continuación, encontrarás las instrucciones para realizar este cambio.
+Antes de comenzar con la configuración del proyecto, necesitarás tener una copia del proyecto en tu cuenta de GitHub. Para ello, deberás forkear el proyecto haciendo click en el botón 'Fork' ubicado en la parte superior derecha de la página del repositorio original.
+
+## Configuración de las Claves
+
+Una vez que hayas forkeado el proyecto, para que este funcione correctamente, es necesario que reemplaces las claves API de prueba por tus propias claves. A continuación, encontrarás las instrucciones para realizar este cambio.
 
 ## Pasos para configurar las claves API
 
